@@ -19,15 +19,17 @@ The exporter samples the shared memory mapping every `100ms` by default and writ
 
 - speed in km/h and mph
 - RPM and gear
-- throttle, brake, and clutch
-- steering wheel angle
-- lap counters, lap distance, and lap times
+- processed and raw throttle / brake, clutch, steering angle, steering torque, and ABS activity
+- lap counters, lap distance, lap times, and lap delta fields
 - session number, session state, session flags, and remaining time
 - overall/class position and incidents
-- fuel level, fuel percentage, and fuel burn
-- track, air, water, and oil temperatures
-- voltage
-- GPS-style location fields when available: latitude, longitude, altitude
+- fuel level, fuel percentage, fuel burn, and push-to-pass state
+- track, air, water, and oil temperatures plus weather, wind, humidity, precipitation, and wetness state
+- tyre compounds, tyre set usage, and planned pit tyre pressures
+- car dynamics such as acceleration, yaw, pitch, roll, and velocity vectors
+- voltage and engine warning bits
+- a derived session-local track trace for live plotting
+- GPS-style location fields when available from the SDK: latitude, longitude, altitude
 - car state booleans such as on pit road / on track / in garage
 
 ## Quick start
@@ -63,7 +65,10 @@ InfluxDB:
 - Bucket: `telemetry`
 - Token: `iracing-super-token`
 
-The dashboard is provisioned automatically as `iRacing Race Engineering Dashboard`.
+The dashboards are provisioned automatically as:
+
+- `iRacing Live Telemetry Dashboard`
+- `iRacing Stint Analysis Dashboard`
 
 ## Configuration
 

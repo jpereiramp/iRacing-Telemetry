@@ -30,6 +30,7 @@ type Reader struct {
 	lastState       string
 	lastStateReason string
 	logger          *log.Logger
+	trackTrace      trackTraceState
 }
 
 func NewReader() (*Reader, error) {
@@ -79,44 +80,90 @@ func (r *Reader) ReadSnapshot() TelemetrySnapshot {
 
 	sampleTime := time.Now().UTC()
 	snapshot := TelemetrySnapshot{
-		SpeedKPH:                    clampNonNegative(speedMps) * 3.6,
-		SpeedMPH:                    clampNonNegative(speedMps) * 2.2369362920544,
-		RPM:                         clampNonNegative(r.readFloatVariableOrZeroLocked("RPM")),
-		Gear:                        clampGear(int(r.readIntVariableOrZeroLocked("Gear"))),
-		Throttle:                    clamp01(r.readFloatVariableOrZeroLocked("Throttle")),
-		Brake:                       clamp01(r.readFloatVariableOrZeroLocked("Brake")),
-		Clutch:                      clamp01(r.readFloatVariableOrZeroLocked("Clutch")),
-		SteeringWheelAngle:          r.readFloatVariableOrZeroLocked("SteeringWheelAngle"),
-		CurrentLap:                  int(r.readIntVariableOrZeroLocked("Lap")),
-		CompletedLaps:               int(r.readIntVariableOrZeroLocked("LapCompleted")),
-		LapDistancePct:              clamp01(r.readFloatVariableOrZeroLocked("LapDistPct")),
-		CurrentLapTimeSeconds:       clampNonNegative(r.readFloatVariableOrZeroLocked("LapCurrentLapTime")),
-		LastLapTimeSeconds:          clampNonNegative(r.readFloatVariableOrZeroLocked("LapLastLapTime")),
-		BestLapTimeSeconds:          clampNonNegative(r.readFloatVariableOrZeroLocked("LapBestLapTime")),
-		SessionNumber:               int(r.readIntVariableOrZeroLocked("SessionNum")),
-		SessionState:                int(r.readIntVariableOrZeroLocked("SessionState")),
-		SessionFlags:                int(r.readIntVariableOrZeroLocked("SessionFlags")),
-		SessionTimeSeconds:          clampNonNegative(r.readFloatVariableOrZeroLocked("SessionTime")),
-		SessionTimeRemainingSeconds: clampNonNegative(r.readFloatVariableOrZeroLocked("SessionTimeRemain")),
-		SessionLapsRemaining:        clampNonNegative(r.readFloatVariableOrZeroLocked("SessionLapsRemain")),
-		Position:                    clampPositiveOrZero(int(r.readIntVariableOrZeroLocked("PlayerCarPosition"))),
-		ClassPosition:               clampPositiveOrZero(int(r.readIntVariableOrZeroLocked("PlayerCarClassPosition"))),
-		FuelLevelLiters:             clampNonNegative(r.readFloatVariableOrZeroLocked("FuelLevel")),
-		FuelLevelPct:                clamp01(r.readFloatVariableOrZeroLocked("FuelLevelPct")),
-		FuelUsePerHour:              clampNonNegative(r.readFloatVariableOrZeroLocked("FuelUsePerHour")),
-		TrackTempC:                  r.readFloatVariableOrZeroLocked("TrackTemp"),
-		TrackTempCrewC:              r.readFloatVariableOrZeroLocked("TrackTempCrew"),
-		AirTempC:                    r.readFloatVariableOrZeroLocked("AirTemp"),
-		WaterTempC:                  clampNonNegative(r.readFloatVariableOrZeroLocked("WaterTemp")),
-		OilTempC:                    clampNonNegative(r.readFloatVariableOrZeroLocked("OilTemp")),
-		Voltage:                     clampNonNegative(r.readFloatVariableOrZeroLocked("Voltage")),
-		OnPitRoad:                   r.readBoolVariableOrFalseLocked("OnPitRoad"),
-		IsOnTrack:                   r.readFirstBoolVariableLocked("IsOnTrackCar", "IsOnTrack"),
-		IsInGarage:                  r.readBoolVariableOrFalseLocked("IsInGarage"),
-		TrackSurface:                clampPositiveOrZero(int(r.readIntVariableOrZeroLocked("PlayerTrackSurface"))),
-		Incidents:                   clampPositiveOrZero(int(r.readIntVariableOrZeroLocked("PlayerCarMyIncidentCount"))),
-		Source:                      stateLive,
-		SampleTime:                  sampleTime,
+		SpeedKPH:                     clampNonNegative(speedMps) * 3.6,
+		SpeedMPH:                     clampNonNegative(speedMps) * 2.2369362920544,
+		RPM:                          clampNonNegative(r.readFloatVariableOrZeroLocked("RPM")),
+		Gear:                         clampGear(int(r.readIntVariableOrZeroLocked("Gear"))),
+		Throttle:                     clamp01(r.readFloatVariableOrZeroLocked("Throttle")),
+		ThrottleRaw:                  clamp01(r.readFloatVariableOrZeroLocked("ThrottleRaw")),
+		Brake:                        clamp01(r.readFloatVariableOrZeroLocked("Brake")),
+		BrakeRaw:                     clamp01(r.readFloatVariableOrZeroLocked("BrakeRaw")),
+		BrakeABSActive:               r.readBoolVariableOrFalseLocked("BrakeABSactive"),
+		BrakeABSCutPct:               clamp01(r.readFloatVariableOrZeroLocked("BrakeABSCutPct")),
+		Clutch:                       clamp01(r.readFloatVariableOrZeroLocked("Clutch")),
+		SteeringWheelAngle:           r.readFloatVariableOrZeroLocked("SteeringWheelAngle"),
+		SteeringWheelTorque:          r.readFloatVariableOrZeroLocked("SteeringWheelTorque"),
+		SteeringWheelPctTorque:       r.readFloatVariableOrZeroLocked("SteeringWheelPctTorque"),
+		CurrentLap:                   int(r.readIntVariableOrZeroLocked("Lap")),
+		CompletedLaps:                int(r.readIntVariableOrZeroLocked("LapCompleted")),
+		LapDistanceMeters:            clampNonNegative(r.readFloatVariableOrZeroLocked("LapDist")),
+		LapDistancePct:               clamp01(r.readFloatVariableOrZeroLocked("LapDistPct")),
+		CurrentLapTimeSeconds:        clampNonNegative(r.readFloatVariableOrZeroLocked("LapCurrentLapTime")),
+		LastLapTimeSeconds:           clampNonNegative(r.readFloatVariableOrZeroLocked("LapLastLapTime")),
+		BestLapTimeSeconds:           clampNonNegative(r.readFloatVariableOrZeroLocked("LapBestLapTime")),
+		LapDeltaToBestLapSeconds:     r.readFloatVariableOrZeroLocked("LapDeltaToBestLap"),
+		LapDeltaToSessionBestSeconds: r.readFloatVariableOrZeroLocked("LapDeltaToSessionBestLap"),
+		LapDeltaToOptimalLapSeconds:  r.readFloatVariableOrZeroLocked("LapDeltaToOptimalLap"),
+		SessionNumber:                int(r.readIntVariableOrZeroLocked("SessionNum")),
+		SessionState:                 int(r.readIntVariableOrZeroLocked("SessionState")),
+		SessionFlags:                 int(r.readIntVariableOrZeroLocked("SessionFlags")),
+		SessionTimeSeconds:           clampNonNegative(r.readFloatVariableOrZeroLocked("SessionTime")),
+		SessionTimeRemainingSeconds:  clampNonNegative(r.readFloatVariableOrZeroLocked("SessionTimeRemain")),
+		SessionLapsRemaining:         clampNonNegative(r.readFloatVariableOrZeroLocked("SessionLapsRemain")),
+		Position:                     clampPositiveOrZero(int(r.readIntVariableOrZeroLocked("PlayerCarPosition"))),
+		ClassPosition:                clampPositiveOrZero(int(r.readIntVariableOrZeroLocked("PlayerCarClassPosition"))),
+		FuelLevelLiters:              clampNonNegative(r.readFloatVariableOrZeroLocked("FuelLevel")),
+		FuelLevelPct:                 clamp01(r.readFloatVariableOrZeroLocked("FuelLevelPct")),
+		FuelUsePerHour:               clampNonNegative(r.readFloatVariableOrZeroLocked("FuelUsePerHour")),
+		TrackTempC:                   r.readFloatVariableOrZeroLocked("TrackTemp"),
+		TrackTempCrewC:               r.readFloatVariableOrZeroLocked("TrackTempCrew"),
+		TrackWetness:                 clampPositiveOrZero(int(r.readIntVariableOrZeroLocked("TrackWetness"))),
+		AirTempC:                     r.readFloatVariableOrZeroLocked("AirTemp"),
+		RelativeHumidityPct:          clampPct(r.readFloatVariableOrZeroLocked("RelativeHumidity")),
+		PrecipitationPct:             clampPct(r.readFloatVariableOrZeroLocked("Precipitation")),
+		WaterTempC:                   clampNonNegative(r.readFloatVariableOrZeroLocked("WaterTemp")),
+		OilTempC:                     clampNonNegative(r.readFloatVariableOrZeroLocked("OilTemp")),
+		Voltage:                      clampNonNegative(r.readFloatVariableOrZeroLocked("Voltage")),
+		WindDirectionRad:             r.readFloatVariableOrZeroLocked("WindDir"),
+		WindVelocityMps:              clampNonNegative(r.readFloatVariableOrZeroLocked("WindVel")),
+		WeatherDeclaredWet:           r.readBoolVariableOrFalseLocked("WeatherDeclaredWet"),
+		LatAccel:                     r.readFloatVariableOrZeroLocked("LatAccel"),
+		LongAccel:                    r.readFloatVariableOrZeroLocked("LongAccel"),
+		VertAccel:                    r.readFloatVariableOrZeroLocked("VertAccel"),
+		VelocityX:                    r.readFloatVariableOrZeroLocked("VelocityX"),
+		VelocityY:                    r.readFloatVariableOrZeroLocked("VelocityY"),
+		VelocityZ:                    r.readFloatVariableOrZeroLocked("VelocityZ"),
+		Yaw:                          r.readFloatVariableOrZeroLocked("Yaw"),
+		YawNorth:                     r.readFloatVariableOrZeroLocked("YawNorth"),
+		YawRate:                      r.readFloatVariableOrZeroLocked("YawRate"),
+		Pitch:                        r.readFloatVariableOrZeroLocked("Pitch"),
+		Roll:                         r.readFloatVariableOrZeroLocked("Roll"),
+		OnPitRoad:                    r.readBoolVariableOrFalseLocked("OnPitRoad"),
+		IsOnTrack:                    r.readFirstBoolVariableLocked("IsOnTrackCar", "IsOnTrack"),
+		IsInGarage:                   r.readBoolVariableOrFalseLocked("IsInGarage"),
+		TrackSurface:                 clampPositiveOrZero(int(r.readIntVariableOrZeroLocked("PlayerTrackSurface"))),
+		Incidents:                    clampPositiveOrZero(int(r.readIntVariableOrZeroLocked("PlayerCarMyIncidentCount"))),
+		PlayerCarPowerAdjust:         int(r.readIntVariableOrZeroLocked("PlayerCarPowerAdjust")),
+		PlayerTireCompound:           int(r.readIntVariableOrZeroLocked("PlayerTireCompound")),
+		PitServiceTireCompound:       int(r.readIntVariableOrZeroLocked("PitSvTireCompound")),
+		PitServiceLFPressure:         clampNonNegative(r.readFloatVariableOrZeroLocked("PitSvLFP")),
+		PitServiceLRPressure:         clampNonNegative(r.readFloatVariableOrZeroLocked("PitSvLRP")),
+		PitServiceRFPressure:         clampNonNegative(r.readFloatVariableOrZeroLocked("PitSvRFP")),
+		PitServiceRRPressure:         clampNonNegative(r.readFloatVariableOrZeroLocked("PitSvRRP")),
+		TireSetsAvailable:            clampPositiveOrZero(int(r.readIntVariableOrZeroLocked("TireSetsAvailable"))),
+		TireSetsUsed:                 clampPositiveOrZero(int(r.readIntVariableOrZeroLocked("TireSetsUsed"))),
+		LeftTireSetsAvailable:        clampPositiveOrZero(int(r.readIntVariableOrZeroLocked("LeftTireSetsAvailable"))),
+		LeftTireSetsUsed:             clampPositiveOrZero(int(r.readIntVariableOrZeroLocked("LeftTireSetsUsed"))),
+		RightTireSetsAvailable:       clampPositiveOrZero(int(r.readIntVariableOrZeroLocked("RightTireSetsAvailable"))),
+		RightTireSetsUsed:            clampPositiveOrZero(int(r.readIntVariableOrZeroLocked("RightTireSetsUsed"))),
+		RearTireSetsAvailable:        clampPositiveOrZero(int(r.readIntVariableOrZeroLocked("RearTireSetsAvailable"))),
+		RearTireSetsUsed:             clampPositiveOrZero(int(r.readIntVariableOrZeroLocked("RearTireSetsUsed"))),
+		PushToPassActive:             r.readBoolVariableOrFalseLocked("PushToPass"),
+		PushToPassCount:              clampPositiveOrZero(int(r.readIntVariableOrZeroLocked("P2P_Count"))),
+		PushToPassStatus:             clampPositiveOrZero(int(r.readIntVariableOrZeroLocked("P2P_Status"))),
+		EngineWarnings:               int(r.readIntVariableOrZeroLocked("EngineWarnings")),
+		Source:                       stateLive,
+		SampleTime:                   sampleTime,
 	}
 
 	latitude, latOK := r.readFloatVariableLocked("Lat")
@@ -131,6 +178,8 @@ func (r *Reader) ReadSnapshot() TelemetrySnapshot {
 		}
 	}
 
+	r.trackTrace.Apply(&snapshot)
+
 	r.logStateTransitionLocked(stateLive, "reading telemetry from shared memory")
 
 	return snapshot
@@ -138,6 +187,7 @@ func (r *Reader) ReadSnapshot() TelemetrySnapshot {
 
 func (r *Reader) fallbackSnapshotLocked(source string, reason string) TelemetrySnapshot {
 	r.logStateTransitionLocked(source, reason)
+	r.trackTrace.Reset()
 	return TelemetrySnapshot{
 		Source:     source,
 		SampleTime: time.Now().UTC(),
@@ -234,6 +284,7 @@ func (r *Reader) disconnectLocked() {
 	r.mappingBytes = nil
 	r.mapSize = 0
 	r.variables = make(map[string]variableRef)
+	r.trackTrace.Reset()
 }
 
 func (r *Reader) resolveVariablesLocked() error {
@@ -469,6 +520,16 @@ func clamp01(value float64) float64 {
 	}
 	if value > 1 {
 		return 1
+	}
+	return value
+}
+
+func clampPct(value float64) float64 {
+	if value < 0 {
+		return 0
+	}
+	if value > 100 {
+		return 100
 	}
 	return value
 }

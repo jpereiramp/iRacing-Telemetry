@@ -2,19 +2,33 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
-	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
+	"github.com/joao/iracing-telemetry/internal/config"
+	"github.com/joao/iracing-telemetry/internal/influxdb"
 	"github.com/joao/iracing-telemetry/internal/irsdk"
-	"github.com/joao/iracing-telemetry/internal/server"
+	"github.com/joao/iracing-telemetry/internal/pipeline"
 )
 
 func main() {
 	logger := log.New(os.Stdout, "[iracing-telemetry] ", log.LstdFlags|log.Lmicroseconds)
+
+	cfg, err := config.Load()
+	if err != nil {
+		logger.Fatalf("failed to load config: %v", err)
+	}
+
+	logger.Printf(
+		"starting exporter poll_interval=%s influx_url=%s bucket=%s measurement=%s",
+		cfg.PollInterval,
+		cfg.Influx.URL,
+		cfg.Influx.Bucket,
+		cfg.Influx.Measurement,
+	)
 
 	telemetryReader, err := irsdk.NewReader()
 	if err != nil {
@@ -22,22 +36,21 @@ func main() {
 	}
 	defer telemetryReader.Close()
 
-	srv := server.New(":8080", telemetryReader, logger)
-
-	go func() {
-		logger.Printf("server listening on http://localhost%s", srv.Addr)
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Fatalf("server failure: %v", err)
+	writer := influxdb.NewClient(cfg.Influx, logger)
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.Influx.WriteTimeout)
+		defer cancel()
+		if err := writer.Close(shutdownCtx); err != nil {
+			logger.Printf("influxdb shutdown error: %v", err)
 		}
 	}()
 
-	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
-	<-stop
+	service := pipeline.New(cfg.PollInterval, telemetryReader, writer, logger)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := srv.Shutdown(ctx); err != nil {
-		logger.Printf("graceful shutdown error: %v", err)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	if err := service.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+		logger.Fatalf("pipeline failure: %v", err)
 	}
 }
